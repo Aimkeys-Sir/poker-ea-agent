@@ -1,3 +1,5 @@
+const { gameStart, possibleMoves } = require("./gamePlay")
+
 let roomPlayers = []
 let privateRooms = {}
 let room = 1
@@ -5,19 +7,20 @@ let room = 1
 function listen(io) {
   function joinPublicRoom(socket, playerData) {
     socket.join(room)
-    console.log(io.sockets.adapter.rooms)
+    // console.log(io.sockets.adapter.rooms)
     playerData.socket = socket.id
-    if (!roomPlayers.find((p) => p.pid === playerData.pid)) {
+    if (!roomPlayers.find((p) => p.socket === playerData.socket)) {
       roomPlayers.push(playerData)
     }
     console.log({ playerData, players: roomPlayers.length })
 
-    io.in(room).emit("playerJoined", { roomPlayers, room })
+    io.in(room).emit("player_joined", { roomPlayers, room })
     if (roomPlayers.length === 5) {
       room += 1
       roomPlayers.splice(0)
     }
   }
+
   function joinPrivateRoom(socket, playerData) {
     const privateRoom = playerData.room
 
@@ -38,10 +41,14 @@ function listen(io) {
       roomPlayers: privateRooms[privateRoom],
       room: privateRoom,
     })
+  
   }
+
+
   io.on("connection", (socket) => {
     console.log("User connected", socket.id)
     socket.on("ready", (playerData) => {
+      playerData = playerData ?? {}
       if (playerData.room) {
         joinPrivateRoom(socket, playerData)
         console.log("private: ", privateRooms[playerData.room])
@@ -53,8 +60,11 @@ function listen(io) {
 
     socket.on("started", ({ room, started }) => {
       console.log("started", started)
-      if(started){
-        io.to(room).emit("gameStarted")
+      if (started) {
+        const startData = gameStart(roomPlayers.length)
+
+        startData.possibleMoves = startData.hands.map(h=> possibleMoves(h, startData.startCard))
+        io.to(room).emit("gameStarted", startData)
       }
     })
     socket.on("deal", (startGameData) => {
@@ -99,17 +109,17 @@ function listen(io) {
 
     socket.on("disconnecting", (a) => {
       socket.rooms.forEach((currentRoom) => {
-          io.to(currentRoom).emit("userDisconnect", { socket: socket.id })
-          if (room === currentRoom) {
-              roomPlayers = roomPlayers.filter((p) => p.socket !== socket.id)
-            }
-            
-            if (privateRooms[currentRoom]) {
-                privateRooms[currentRoom] = privateRooms[currentRoom].filter(
-                    (p) => p.socket !== socket.id
-                    )
-                }
-                console.log({currentRoom, p: privateRooms[currentRoom]})
+        io.to(currentRoom).emit("userDisconnect", { socket: socket.id })
+        if (room === currentRoom) {
+          roomPlayers = roomPlayers.filter((p) => p.socket !== socket.id)
+        }
+
+        if (privateRooms[currentRoom]) {
+          privateRooms[currentRoom] = privateRooms[currentRoom].filter(
+            (p) => p.socket !== socket.id
+          )
+        }
+        console.log({ currentRoom, p: privateRooms[currentRoom] })
       })
       console.log(`Disconnecting: ${socket.id} ${a}`)
     })

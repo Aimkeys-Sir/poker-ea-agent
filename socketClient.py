@@ -1,19 +1,46 @@
-from socketIO_client import SocketIO, LoggingNamespace
+import socketio
 
-def on_connect():
-    print("connected")
+sio = socketio.Client()
 
-def on_disconnect():
-    print("disconnected")
 
-def on_ready():
-    print("I'm ready")
+@sio.event
+def connect():
+    print("Connected")
+    sio.emit("ready", {'pid': sio.sid})
 
-def on_error(*args):
-    print(f"Error occured: {args}")
+@sio.event
+def connect_error(error):
+    print("an error occurred: ", error)
 
-socketIO = SocketIO("localhost", 4000, LoggingNamespace)
+@sio.event
+def disconnect():
+    print("socket disconnected")
 
-socketIO.on('connect', on_connect)
-socketIO.on('error', on_error)
-socketIO.emit("ready", on_ready)
+@sio.on('player_joined')
+def player_joined(payload):
+    print(payload)
+    room = payload['room']
+    room_players = payload['roomPlayers']
+
+    if len(payload['roomPlayers'])>1 and sio.sid == payload['roomPlayers'][0]['pid'] :
+        sio.emit("started", {'started': True, 'room': room})
+
+    @sio.on('gameStarted')
+    def on_start(payload):
+        print(payload)
+
+        def get_sid(p):
+            return p["pid"]
+        
+        turn = 0
+        my_index = list(map(get_sid, room_players)).index(sio.sid)
+        my_hand = payload['hands'][my_index]
+        top_card = payload['startCard']
+
+        # if my_index == turn:
+        #     @sio.emit("whereto", {'hand': my_hand, 'topCard': top_card})
+
+
+
+sio.connect('http://localhost:4000')
+sio.wait()   
