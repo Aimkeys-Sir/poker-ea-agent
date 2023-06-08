@@ -46,6 +46,7 @@ function possibleMoves(hand, topCard, action = false) {
   if (!hand.length) {
     return []
   }
+  const isQuestion = (c) => Math.floor(c / 4) === 7 || Math.floor(c / 4) === 7
 
   const starting = []
 
@@ -60,7 +61,7 @@ function possibleMoves(hand, topCard, action = false) {
     }
   } else if (action === 4 || action === 5) {
     starting.push(
-      ...hand.filter((c) => Math.floor(c / 4) === 1 || Math.floor(c / 4) === 0),
+      ...hand.filter((c) => Math.floor(c / 4) === 1 || Math.floor(c / 4) === 0)
     )
     if (!starting.length) {
       return []
@@ -69,14 +70,14 @@ function possibleMoves(hand, topCard, action = false) {
     }
   } else if (action === 6) {
     starting.push(
-      ...hand.filter((c) => c === 52 || c === 53 || Math.floor(c / 4) === 0),
+      ...hand.filter((c) => c === 52 || c === 53 || Math.floor(c / 4) === 0)
     )
     if (!starting.length) {
       return []
     } else {
       return generateCombos()
     }
-  } else if ([0, 1, 2, 3].includes(action)) {
+  } else if (action<4) {
     starting.push(
       ...hand.filter(
         (c) =>
@@ -84,7 +85,7 @@ function possibleMoves(hand, topCard, action = false) {
           Math.floor(c / 4) === 0 ||
           (c === 52 && action < 2) ||
           (c === 53 && action > 1)
-      ),
+      )
     )
     if (!starting.length) {
       return []
@@ -96,12 +97,11 @@ function possibleMoves(hand, topCard, action = false) {
   //normal topcard
   if (action === false) {
     starting.push(
-      ...hand.filter((c) => c % 4 === f || Math.floor(c / 4) === n),
+      ...hand.filter((c) => c % 4 === f || Math.floor(c / 4) === n || c < 4)
     )
   }
 
-
-  const isQuestion = (c) => Math.floor(c / 4) === 7 || Math.floor(c / 4) === 7
+  
 
   function getNext(progression) {
     return hand
@@ -117,8 +117,8 @@ function possibleMoves(hand, topCard, action = false) {
 
   function generateCombos() {
     const probs = []
-    if(!starting.length){
-        return []
+    if (!starting.length) {
+      return []
     }
 
     starting.forEach((card) => {
@@ -132,7 +132,7 @@ function possibleMoves(hand, topCard, action = false) {
 
         cardProbs.push(...all)
 
-        console.log({all, cardProbs})
+        console.log({ all, cardProbs })
         if (!all.length) break
       }
       probs.push(...cardProbs)
