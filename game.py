@@ -1,7 +1,15 @@
 import socketio
+import numpy as np
+import torch
 
 sio = socketio.Client()
 
+
+def hot_encode(cards, length=54):
+    tensor = torch.zeros(length)
+    print(cards)
+    tensor[cards] = 1.0
+    return tensor
 
 @sio.event
 def connect():
@@ -35,7 +43,21 @@ def player_joined(payload):
         turn = 0
         my_index = list(map(get_sid, room_players)).index(sio.sid)
         my_hand = payload['hands'][my_index]
+
+        my_hand = hot_encode(my_hand)
         top_card = payload['startCard']
+        top_card = hot_encode([top_card])
+        wastes = top_card.clone()
+
+        deck = torch.zeros(54)
+        deck[0] = 40/54
+
+        actions = torch.zeros([54])
+
+        env_space = torch.stack([deck, my_hand, top_card, wastes], dim=0)
+
+        print(env_space)
+        print("shape: {}".format(env_space.size()))
 
         # if my_index == turn:
         #     @sio.emit("whereto", {'hand': my_hand, 'topCard': top_card})
