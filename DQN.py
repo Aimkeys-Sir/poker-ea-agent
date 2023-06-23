@@ -6,6 +6,8 @@ import pandas as pd
 import collections
 import random
 
+DEVICE = 'cpu'
+
 
 class DQNAgent(torch.nn.Module):
     def __init__(self, params):
@@ -82,9 +84,12 @@ class DQNAgent(torch.nn.Module):
 
             target = reward
             next_state_tensor = torch.tensor(np.expand_dims(
-                next_state, 0), dtype=torch.float32, requires_grad=True)
+                next_state, 0), dtype=torch.float32, requires_grad=True).to(DEVICE)
             state_tensor = torch.tensor(np.expand_dims(
-                state, 0), dtype=torch.float32, requires_grad=True)
+                state, 0), dtype=torch.float32, requires_grad=True).to(DEVICE)
+            
+            
+            
 
             if not done:
                 target = reward + self.gamma * \
@@ -105,9 +110,10 @@ class DQNAgent(torch.nn.Module):
 
         target = reward
         next_state_tensor = torch.tensor(np.expand_dims(
-            next_state, 0), dtype=torch.float32, requires_grad=True)
+            next_state, 0), dtype=torch.float32, requires_grad=True).to(DEVICE)
         state_tensor = torch.tensor(np.expand_dims(
-            state, 0), dtype=torch.float32, requires_grad=True)
+            state, 0), dtype=torch.float32, requires_grad=True).to(DEVICE)
+        
 
         if not done:
             target = reward + self.gamma * \
@@ -117,6 +123,7 @@ class DQNAgent(torch.nn.Module):
         target_f = output.clone()
         target_f[0][np.argmax(action)] = target
         target_f.detach()
+
         self.optimizer.zero_grad()
         loss = F.mse_loss(output, target_f)
         loss.backward()
