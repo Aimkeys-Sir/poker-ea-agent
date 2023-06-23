@@ -12,11 +12,11 @@ params = dict()
 params["first_layer_size"] = 1024
 params["second_layer_size"] = 512
 params["third_layer_size"] = 256
-params["learning_rate"] = 0.99
-params["memory_size"] = 2500
+params["learning_rate"] = 0.01
+params["memory_size"] = 12500
 params["load_weights"] = False
 params['train'] = True
-params["epsilon_decay_linear"] = 0.001
+params["epsilon_decay_linear"] = 0.1
 params["episodes"] = 10
 params["batch_size"] = 1000
 
@@ -48,12 +48,16 @@ class Player():
         self.asking = False
         self.index = index
         self.reward = 0
+        self.won = 0
 
     def can_complete(self):
         if len(self.build) == 0 or self.build[-1] in questions:
             return False
         else:
             return True
+        
+    def check_in_white(self):
+         return [card for card in self.hand if card in self.game.white_list(build=self.build)]
 
     def waste_card(self, card):
         white = self.game.white_list(build=self.build)
@@ -61,7 +65,7 @@ class Player():
             self.build += [card]
             # print(f"build:{ self.build} card: {card}")
             self.hand = list(filter(lambda x: x != card, self.hand))
-            self.reward  = 1
+            self.reward = 1
         else:
             # print(f"build:{ self.build} card: {card}")
             self.reward = -1
@@ -71,7 +75,8 @@ class Player():
         game.pick(player=self)
         self.game.new_turn()
         self.build.clear()
-        self.reward = ((len(self.hand)-4) / 2)* -1 if len(self.hand)> 6 else 0
+        self.reward = ((len(self.hand)-4) / 2) * - \
+            1 if len(self.hand) > 6 else 0
 
     def complete_build(self, game):
         if len(self.build) == 0:
@@ -79,11 +84,11 @@ class Player():
             return
 
         game.waste(self)
-        
 
         if len(self.hand) == 0 and self.build[-1] not in questions + aces + punishers and game.card_less == False:
             self.reward = 10
             game.complete = True
+            self.won +=1
             self.build = []
             return
         elif len(self.hand) == 0 and (self.build[-1] in questions+aces+punishers or game.card_less == True):
@@ -136,7 +141,8 @@ class Game():
             if len(aces_in_build) < 2:
                 top = self.wastes[-1]
                 self.turn = (self.turn+1) % 2
-                self.wastes = self.wastes[0:-1] + player.build + self.wastes[-1:]
+                self.wastes = self.wastes[0:-1] + \
+                    player.build + self.wastes[-1:]
             else:
                 player.asking = True
         elif top < 4:
@@ -257,14 +263,16 @@ def play(player: Type[Player], agent: Type[DQNAgent], game: Type[Game], params: 
         return
 
     cardless = 1 if game.card_less == True else 0
+    top = player.build[-1] if len(player.build) > 0 else game.top_card
     env_space = agent.simple_env(
-        agent_hand=player.hand, top_card=game.top_card, turn=turn, cardless=cardless, action=game.action)
+        agent_hand=player.hand, top_card=top, turn=turn, cardless=cardless, action=game.action)
 
     if random.uniform(0, 1) < agent.epsilon:
         prediction = torch.rand(60)
     else:
         with torch.no_grad():
-            state = torch.tensor(env_space.clone().detach().reshape(1, 117), dtype=torch.float32)
+            state = torch.tensor(env_space.clone().detach().reshape(
+                1, 117), dtype=torch.float32)
             prediction = agent(state)
             print(prediction)
 
@@ -276,7 +284,7 @@ def play(player: Type[Player], agent: Type[DQNAgent], game: Type[Game], params: 
         asks = [0, 0, 0, 0]
         pick = 0 if (len(player.build) >
                      0 and player.build[-1] not in questions) else 1
-        mask = torch.cat([agent.hot_encode(player.hand), torch.tensor(
+        mask = torch.cat([agent.hot_encode(player.check_in_white()), torch.tensor(
             asks, requires_grad=False), torch.tensor([complete, pick], requires_grad=False)])
 
     move = prediction.clone().detach()*mask
@@ -318,15 +326,15 @@ def play(player: Type[Player], agent: Type[DQNAgent], game: Type[Game], params: 
     if (player.index != game.turn):
         turn = 0
 
-    next_state = agent.simple_env(agent_hand=player.hand, top_card=game.top_card,
+    top = player.build[-1] if len(player.build) > 0 else game.top_card
+    next_state = agent.simple_env(agent_hand=player.hand, top_card=top,
                                   turn=turn, cardless=game.card_less, action=game.action)
-
+    
     agent.remember(state=env_space, action=final_move,
                    reward=player.reward, next_state=next_state, done=game.complete)
     if params['train']:
-        agent.replay_new(memory=agent.memory, batch_size=params['batch_size'])
-        model_weights = agent.state_dict()
-        torch.save(model_weights, params["weights_path"])
+        agent.train_short_memory(state=env_space, action=final_move,
+                                 reward=player.reward, next_state=next_state, done=game.complete)
 
 
 def run():
@@ -338,6 +346,12 @@ def run():
         agent2.parameters(), weight_decay=0, lr=params2['learning_rate'])
     games_count = 0
     steps = 0
+
+    def replay(agent, params):
+        agent.replay_new(memory=agent.memory, batch_size=params['batch_size'])
+        model_weights = agent.state_dict()
+        torch.save(model_weights, params["weights_path"])
+
     while games_count < params['episodes']:
         if game.complete:
             steps = 0
@@ -350,28 +364,33 @@ def run():
             print("\n top card")
             print(cs[game.top_card])
 
-        if game.turn == 0:
-            if not params1['train']:
-                agent1.epsilon = 0.01
-            else:
-                agent1.epsilon = 1 - (steps * params1["epsilon_decay_linear"])
+        while not game.complete:
+            if game.turn == 0:
+                if not params1['train']:
+                    agent1.epsilon = 0.01
+                else:
+                    agent1.epsilon = 1 - (games_count * params1["epsilon_decay_linear"])
 
-            play(player=player1, game=game, agent=agent1,
-                 params=params1, opponent=player2, opp_agent=agent2)
-        elif game.turn == 1:
-            if not params2['train']:
-                agent2.epsilon = 0.01
-            else:
-                agent2.epsilon = 1 - \
-                    (games_count * params1["epsilon_decay_linear"])
-            play(player=player2, game=game, agent=agent2,
-                 params=params2, opponent=player1, opp_agent=agent1)
+                play(player=player1, game=game, agent=agent1,
+                    params=params1, opponent=player2, opp_agent=agent2)
+            elif game.turn == 1:
+                if not params2['train']:
+                    agent2.epsilon = 0.01
+                else:
+                    agent2.epsilon = 1 - \
+                        (games_count * params1["epsilon_decay_linear"])
+                play(player=player2, game=game, agent=agent2,
+                    params=params2, opponent=player1, opp_agent=agent1)
 
-        steps += 1
-        if game.complete:
-            games_count += 1
+            print(f"game: {games_count}.  step: {steps} turn: {game.turn} score: {player1.won} - {player2.won}")
+            steps += 1
+            if steps>1999:
+                game.complete = True
+            if game.complete:
+                games_count += 1
+                replay(agent=agent1, params=params1)
+                replay(agent=agent2, params=params2)
 
-        print(f"game: {games_count}.  step: {steps} turn: {game.turn}")
 
 
 run()
